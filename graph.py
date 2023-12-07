@@ -345,8 +345,8 @@ class Protein:
     if parse_hetatom:
         xyz_het, info_het = [], []
         for l in lines:
-            # if l[:6]=='HETATM' and not (ignore_het_h and l[77]=='H'): # NOTE: changed
-            if l[17:20] == "MOL" and not (ignore_het_h and l[77]=='H'):
+            if l[:6]=='HETATM' and not (ignore_het_h and l[77]=='H'): # NOTE: changed
+            # if l[17:20] == "MOL" and not (ignore_het_h and l[77]=='H'):
                 info_het.append(atom2num[l[76:78].strip().upper()])
                 xyz_het.append([float(l[30:38]), float(l[38:46]), float(l[46:54])])
 

@@ -94,10 +94,10 @@ atomic_numbers_map = {1:'H', 5:'B', 6:'C', 7:'N', 8:'O', 9:'F',11:'Na',
                       19:'K',20:'Ca',34:'Se',35:'Br',53:'I'}
 
 
-with open('/sdf/group/cryoem/g/CS57/mpnn/misato_dataset/src/data/processing/Maps/atoms_type_map.pickle', 'rb') as f1:
+with open('atoms_type_map.pickle', 'rb') as f1:
   atoms_type_map = pickle.load(f1)
 
-with open('/sdf/group/cryoem/g/CS57/mpnn/misato_dataset/src/data/processing/Maps/atoms_name_map_for_pdb.pickle', 'rb') as f2:
+with open('atoms_name_map_for_pdb.pickle', 'rb') as f2:
   pdb_atom_map = pickle.load(f2)
 
 # fixes 😱

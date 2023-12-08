@@ -148,7 +148,7 @@ class Protein:
     
     if self.user_pdb_fp is not None:
       self.bb_coords, self.seq, self.ligand_coords, self.ligand_atoms = self.direct_extract_info_pdb(self.user_pdb_fp)
-    if self.pdb is not None:
+    elif self.pdb is not None:
       self.bb_coords, self.seq, self.ligand_coords, self.ligand_atoms = self.extract_info_pdb(frame=frame, pdb=pdb)
     else:
       self.bb_coords, self.seq, self.ligand_coords, self.ligand_atoms = self.extract_info(frame=frame)

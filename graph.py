@@ -48,6 +48,7 @@ num2aa=[
 aa2num = {x:i for i,x in enumerate(num2aa)}
 aa2num["CYX"] = aa2num["CYS"]
 aa2num["HIE"] = aa2num["HIS"]
+aa2num = defaultdict(lambda:20, aa2num)
 
 # full sc atom representation (Nx14)
 aa2long=[
@@ -89,6 +90,7 @@ atoms_residue_map = {0: 'MOL', 1: 'ACE', 2: 'ALA', 3: 'ARG', 4: 'ASN',
                          15: 'MET', 16: 'PHE', 17: 'PRO', 18: 'SER', 19: 'THR',
                          20: 'TRP', 21: 'TYR', 22: 'VAL'}
 misato_aa2num = {v:k for k,v in atoms_residue_map.items()}
+
 
 atomic_numbers_map = {1:'H', 5:'B', 6:'C', 7:'N', 8:'O', 9:'F',11:'Na',
                       12:'Mg',13:'Al',14:'Si',15:'P',16:'S',17:'Cl',
@@ -315,7 +317,7 @@ class Protein:
         except ValueError:
           # print(f"Missing CA for residue {resNo}")
           continue
-        for i_atm, tgtatm in enumerate(aa2long[misato_aa2num[aa]]):
+        for i_atm, tgtatm in enumerate(aa2long[aa2num[aa]]):
             if tgtatm is not None and tgtatm.strip() == atom.strip(): # ignore whitespace
                 xyz[idx,i_atm,:] = [float(l[30:38]), float(l[38:46]), float(l[46:54])]
                 break

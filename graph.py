@@ -88,6 +88,7 @@ atoms_residue_map = {0: 'MOL', 1: 'ACE', 2: 'ALA', 3: 'ARG', 4: 'ASN',
                          10: 'GLY', 11: 'HIE', 12: 'ILE', 13: 'LEU', 14: 'LYS',
                          15: 'MET', 16: 'PHE', 17: 'PRO', 18: 'SER', 19: 'THR',
                          20: 'TRP', 21: 'TYR', 22: 'VAL'}
+misato_aa2num = {v:k for k,v in atoms_residue_map.items()}
 
 atomic_numbers_map = {1:'H', 5:'B', 6:'C', 7:'N', 8:'O', 9:'F',11:'Na',
                       12:'Mg',13:'Al',14:'Si',15:'P',16:'S',17:'Cl',
@@ -298,7 +299,7 @@ class Protein:
   def parse_pdb_lines(self, lines, parse_hetatom=False, ignore_het_h=True):
     # indices of residues observed in the structure
     res = [(l[22:26],l[17:20]) for l in lines if l[:4]=="ATOM" and l[12:16].strip()=="CA"]
-    seq = [atoms_residue_map[r[1]] if r[1] in atoms_residue_map.keys() else 20 for r in res]
+    seq = [misato_aa2num[r[1]] if r[1] in misato_aa2num.keys() else 20 for r in res]
     # pdb_idx = [( l[21:22].strip(), int(l[22:26].strip()) ) for l in lines if l[:4]=="ATOM" and l[12:16].strip()=="CA"]  # chain letter, res num
     # NOTE: remove .strip() to handle empty chain ID
     pdb_idx = [( l[21:22], int(l[22:26].strip()) ) for l in lines if l[:4]=="ATOM" and l[12:16].strip()=="CA"]  # chain letter, res num
@@ -314,7 +315,7 @@ class Protein:
         except ValueError:
           # print(f"Missing CA for residue {resNo}")
           continue
-        for i_atm, tgtatm in enumerate(aa2long[atoms_residue_map[aa]]):
+        for i_atm, tgtatm in enumerate(aa2long[misato_aa2num[aa]]):
             if tgtatm is not None and tgtatm.strip() == atom.strip(): # ignore whitespace
                 xyz[idx,i_atm,:] = [float(l[30:38]), float(l[38:46]), float(l[46:54])]
                 break

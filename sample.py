@@ -97,11 +97,11 @@ def test(model, loader, local_rank):
 
 def runner(args, log_dir, local_rank, rep=None):
 
-    test_dataset = UserPDB(transform=LigandMPNNTransform(), user_pdb_fp=args.user_pdb_fp)
+    test_dataset = UserPDB(transform=LigandMPNNTransform(noise=args.noise, K=args.knn_res, M=args.knn_atom), user_pdb_fp=args.user_pdb_fp)
 
     test_loader = DataLoader(test_dataset, args.batch_size)
 
-    model = HeteroGNN(hidden_channels=args.hidden_dim, out_channels=output_dim, num_layers=args.num_layers)
+    model = HeteroGNN(hidden_channels=args.hidden_dim, out_channels=23, num_layers=args.num_layers)
     local_rank = int(local_rank)
     torch.cuda.set_device(local_rank)
     model = model.to(f'cuda:{local_rank}')
@@ -127,6 +127,9 @@ if __name__=="__main__":
     parser.add_argument('--ckpt', type=str, default="heterognn_weights.pt")
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--rep', type=int, default=0)
+    parser.add_argument('--noise', type=float, default=0.1)
+    parser.add_argument('--knn_res', type=int, default=48) # 48
+    parser.add_argument('--knn_atom', type=int, default=25) # 25
     args = parser.parse_args()
 
     print(args)

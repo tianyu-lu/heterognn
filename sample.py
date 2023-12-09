@@ -16,21 +16,6 @@ import numpy as np
 
 
 
-B = 64
-L = 256 # length of protein
-A = 36  # number of ligand atoms
-K = 48  # number of neighbor residues for each residue node
-M = 25  # number of neighbor atoms for each residue node
-rbf = 16# number of bins for radial basis function
-res_input_dim = 23
-res_res_input_dim = 5*5*rbf
-atom_input_dim = 11
-res_atom_input_dim = 5*rbf
-atom_atom_input_dim = rbf
-hidden_dim = 128
-output_dim = 23
-
-
 class HeteroGNN(torch.nn.Module):
     def __init__(self, hidden_channels, out_channels, num_layers):
         super().__init__()

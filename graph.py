@@ -1,37 +1,39 @@
-'''MISATO, a database for protein-ligand interactions
-    Copyright (C) 2023  
-                        Till Siebenmorgen  (till.siebenmorgen@helmholtz-munich.de)
-                        Sabrina Benassou   (s.benassou@fz-juelich.de)
-                        Filipe Menezes     (filipe.menezes@helmholtz-munich.de)
-                        Erinç Merdivan     (erinc.merdivan@helmholtz-munich.de)
+'''
+Code adapted from:
 
-    This library is free software; you can redistribute it and/or
-    modify it under the terms of the GNU Lesser General Public
-    License as published by the Free Software Foundation; either
-    version 2.1 of the License, or (at your option) any later version.
+MISATO, a database for protein-ligand interactions
+Copyright (C) 2023  
+                    Till Siebenmorgen  (till.siebenmorgen@helmholtz-munich.de)
+                    Sabrina Benassou   (s.benassou@fz-juelich.de)
+                    Filipe Menezes     (filipe.menezes@helmholtz-munich.de)
+                    Erinç Merdivan     (erinc.merdivan@helmholtz-munich.de)
 
-    This library is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-    Lesser General Public License for more details.
+This library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Lesser General Public
+License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version.
 
-    You should have received a copy of the GNU Lesser General Public
-    License along with this library; if not, write to the Free Software 
-    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA'''
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public
+License along with this library; if not, write to the Free Software 
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+'''
 
 from collections import defaultdict
 import copy
 import itertools
 import pickle
 import subprocess
-import h5py
 import numpy as np
 import scipy.spatial as ss
 from scipy.spatial import KDTree
 import torch
 import torch.nn.functional as F
-from torch_geometric.utils import to_undirected, remove_self_loops, coalesce
-# from torch_sparse import coalesce
+from torch_geometric.utils import to_undirected, coalesce
 
 num2atom = ['H', 'C', 'N', 'O', 'F', 'P', 'S', 'CL', 'BR', 'I', 'B', 'NA', 'MG', 'AL', 'SI', 'K', 'CA', 'SE']
 atom2num = {x:i for i,x in enumerate(num2atom)}
@@ -235,6 +237,23 @@ class Protein:
     return final_idx
 
   def extract_info(self, frame=None):
+    """
+    Get protein and ligand coordinates directly from MISATO h5 file
+    
+    Parameters
+    ----------
+    frame : int, optional
+        Index of frame (0 to 99), by default None
+
+    Returns
+    -------
+    Tuple of [Backbone coords, one-hot sequence encoding, ligand coords, one-hot ligand atom encoding]
+    All Torch.Tensors, shapes:
+        bb_coords: (1, num_residues, 4, 3) 4 = 'N', 'CA', 'C', 'O'
+        seq: (num_residues,)
+        ligand_coords: [(1, num_atoms, 3)]
+        ligand_atoms: [(num_atoms,)]
+    """
     c = np.asarray(self.item['trajectory_coordinates'])
     atom_numbers = np.asarray(self.item['atoms_number'])
     if frame is not None:
@@ -254,34 +273,33 @@ class Protein:
         bb_coords = np.stack([c[:, idx] for idx in bb_atom_idx], axis=2)
     except:
         print(f"Extract Error: {[len(a) for a in bb_atom_idx]}")
-        # import ipdb; ipdb.set_trace()
 
     seq = np.asarray(self.item['atoms_residue'])[bb_atom_idx[0]]
-    # seq = [atoms_residue_map[res] for res in seq] # NOTE changed
 
     # ligand information
     ligand_idx = self.get_ligand_idx()
     ligand_coords = [c[:, start:end] for start, end in ligand_idx]
     convert = lambda atoms: [atomic_numbers_map[n] for n in atoms.tolist()]
-    # ligand_atoms = [convert(atom_numbers[start:end]) for start, end in ligand_idx] # NOTE changed
     ligand_atoms = [atom_numbers[start:end] for start, end in ligand_idx]
 
-    # print("bb_coords")
-    # print(bb_coords, bb_coords.shape)
-    # print("seq")
-    # print(seq, seq.shape)
-    # print("ligand_coords")
-    # print(ligand_coords, ligand_coords[0].shape)
-    # print("ligand_atoms")
-    # print(ligand_atoms, ligand_atoms[0].shape)
-    
-    # bb_coords: (1, num_residues, 4, 3) 4 = 'N', 'CA', 'C', 'O'
-    # seq: (num_residues,)
-    # ligand_coords: [(1, num_atoms, 3)]
-    # ligand_atoms: [(num_atoms,)]
     return bb_coords, seq, ligand_coords, ligand_atoms
   
   def extract_info_ligand(self, frame=None):
+    """
+    Get coordinates and atom types of the ligand(s)
+
+    Parameters
+    ----------
+    frame : int, optional
+        Index of frame (0 to 99), by default None, by default None
+
+    Returns
+    -------
+    Tuple of [Backbone coords, one-hot sequence encoding, ligand coords, one-hot ligand atom encoding]
+    All Torch.Tensors, shapes:
+        ligand_coords: List[(1, num_atoms, 3)]
+        ligand_atoms: List[(num_atoms,)]
+    """
     c = np.asarray(self.item['trajectory_coordinates'])
     atom_numbers = np.asarray(self.item['atoms_number'])
     if frame is not None:
@@ -299,6 +317,9 @@ class Protein:
   # PDB parsers adapted from RFdiffusion
 
   def parse_pdb_lines(self, lines, parse_hetatom=False, ignore_het_h=True):
+    """
+    From RFdiffusion (Watson et al.)
+    """
     # indices of residues observed in the structure
     res = [(l[22:26],l[17:20]) for l in lines if l[:4]=="ATOM" and l[12:16].strip()=="CA"]
     seq = [misato_aa2num[r[1]] if r[1] in misato_aa2num.keys() else 20 for r in res]
@@ -359,25 +380,41 @@ class Protein:
     return out
 
   def parse_pdb(self, filename, **kwargs):
-    '''extract xyz coords for all heavy atoms'''
+    '''From RFdiffusion: extract xyz coords for all heavy atoms'''
     lines = open(filename,'r').readlines()
     return self.parse_pdb_lines(lines, **kwargs)
 
   def extract_info_pdb(self, frame=None, pdb=None):
+    """Use the PDB parser to extract atomic coordinate info
+
+    Parameters
+    ----------
+    frame : int, optional
+        Index of frame (0 to 99), by default None
+    pdb : str, optional
+        Name of PDB, by default None
+
+    Returns
+    -------
+    Tuple of [Backbone coords, one-hot sequence encoding, ligand coords, one-hot ligand atom encoding]
+    All Torch.Tensors, shapes:
+        bb_coords: (1, num_residues, 4, 3) 4 = 'N', 'CA', 'C', 'O'
+        seq: (num_residues,)
+        ligand_coords: [(1, num_atoms, 3)]
+        ligand_atoms: [(num_atoms,)]
+    """
     assert frame is not None
     assert pdb is not None
     subprocess.run([
-      "python3", "/sdf/group/cryoem/g/CS57/mpnn/misato_dataset/src/data/processing/h5_to_pdb.py",
+      "python3", "misato_dataset/src/data/processing/h5_to_pdb.py",
       "--struct", pdb,
       "--frame", str(frame),
-      "--datasetMD", "/sdf/group/cryoem/g/CS57/mpnn/misato_dataset/data/MD/h5_files/MD.hdf5",
-      "--mapdir", "/sdf/group/cryoem/g/CS57/mpnn/misato_dataset/src/data/processing/Maps/"
+      "--datasetMD", "misato_dataset/data/MD/h5_files/MD.hdf5",
+      "--mapdir", "misato_dataset/src/data/processing/Maps/"
     ], check=True)
-    pdb_fp = f"/sdf/group/cryoem/g/CS57/mpnn/misato_dataset/examples/cache/{pdb}_MD_frame{frame}.pdb"
+    pdb_fp = f"misato_dataset/examples/cache/{pdb}_MD_frame{frame}.pdb"
     out = self.parse_pdb(pdb_fp, parse_hetatom=True, ignore_het_h=False)
 
-    # TODO: QM features concat to info_het?
-    # print("================================xyz_het", out["xyz_het"].shape)
     bb_coords = out["xyz"][None, :, :4, :]
     seq = out["seq"]
     try:
@@ -387,14 +424,25 @@ class Protein:
       ligand_coords = None
       ligand_atoms = None
 
-    # bb_coords: (1, num_residues, 4, 3) 4 = 'N', 'CA', 'C', 'O'
-    # seq: (num_residues,)
-    # ligand_coords: [(1, num_atoms, 3)]
-    # ligand_atoms: [(num_atoms,)]
     return bb_coords, seq, ligand_coords, ligand_atoms
   
   def direct_extract_info_pdb(self, pdb_fp):
-    
+    """Used at inference time, extract coordinate info from user-input PDB file
+
+    Parameters
+    ----------
+    pdb_fp : str, Path
+        File path to input PDB file
+
+    Returns
+    -------
+    Tuple of [Backbone coords, one-hot sequence encoding, ligand coords, one-hot ligand atom encoding]
+    All Torch.Tensors, shapes:
+        bb_coords: (1, num_residues, 4, 3) 4 = 'N', 'CA', 'C', 'O'
+        seq: (num_residues,)
+        ligand_coords: [(1, num_atoms, 3)]
+        ligand_atoms: [(num_atoms,)]
+    """
     out = self.parse_pdb(pdb_fp, parse_hetatom=True, ignore_het_h=False)
 
     bb_coords = out["xyz"][None, :, :4, :]
@@ -405,10 +453,6 @@ class Protein:
     except IndexError as err: # give up and get coords from h5 file
       print(f"Parsing PDB had error {err}")
 
-    # bb_coords: (1, num_residues, 4, 3) 4 = 'N', 'CA', 'C', 'O'
-    # seq: (num_residues,)
-    # ligand_coords: [(1, num_atoms, 3)]
-    # ligand_atoms: [(num_atoms,)]
     return bb_coords, seq, ligand_coords, ligand_atoms
 
 
@@ -437,16 +481,6 @@ class Protein:
           single_ligand_match += [(i, x) for x in sublist]
       results.append(copy.deepcopy(single_ligand_match))
     return results
-
-
-# from pathlib import Path
-# md_fp = Path("/sdf/group/cryoem/g/CS57/mpnn/misato_dataset/data/MD/h5_files/MD.hdf5")
-
-# md_data = h5py.File(md_fp, 'r')
-
-# for k in md_data.keys():
-#     print(f"=========================={k}==========================")
-#     Protein(md_data[k], frame=0)
 
 
 def prot_df_to_graph(item, df, edge_dist_cutoff, feat_col='element'):
@@ -528,8 +562,30 @@ def get_rbf(A, B, edge_index):
 
 
 def ligandmpnn_to_graph(item, K, M, noise, frame, pdb=None, qm_item=None, user_pdb_fp=None):
-    """TODO: Docstring
-    """ 
+    """Main function to convert protein/ligand 3D coordinates into a heterogeneous graph object
+
+    Parameters
+    ----------
+    item : str
+        Name of PDB
+    K : int
+        Number of nearest neighbors where a protein residue node has edges with other protein residue nodes
+    M : int
+        Number of nearest neighbors with which a protein residue node has edges with ligand atom nodes
+    noise : float
+        IID Gaussian noise to add to coordinates to perturb input data
+    frame : int
+        Index of frame of trajectory to featurize
+    pdb : str, optional
+        If not None, uses the PDB parser instead of the h5 parser, by default None
+    qm_item : str, optional
+        If not None, uses QM features for ligand atoms, by default None
+
+    Returns
+    -------
+    Tuple of node features, node labels,
+      edge indices and edge features (residue-residue, residue-atom, atom-atom)
+    """
 
     protein = Protein(item, noise, frame=frame, pdb=pdb, user_pdb_fp=user_pdb_fp)
 
@@ -544,8 +600,6 @@ def ligandmpnn_to_graph(item, K, M, noise, frame, pdb=None, qm_item=None, user_p
 
     for resi, ca in enumerate(protein_xyz[:, 1, :]):
 
-        # edge_tuples = list(protein_tree.query_pairs(10.0)) # alternative to RBF
-
         dists, neighs = protein_tree.query(ca, k=K)
         edge_tuples = [(resi, j) for j in neighs]
         res_res_edge_tuples.extend(edge_tuples)
@@ -554,7 +608,6 @@ def ligandmpnn_to_graph(item, K, M, noise, frame, pdb=None, qm_item=None, user_p
 
     res_res_edge_index = torch.LongTensor(res_res_edge_tuples).t().contiguous()
     res_res_edge_index = to_undirected(res_res_edge_index)
-    # res_res_edge_index = remove_self_loops(res_res_edge_index)[0]
     res_res_edge_feats = get_rbf(protein_xyz, protein_xyz, res_res_edge_index) # [7498, 25, 16]
 
     res_node_feats = torch.zeros(len(protein_xyz), 23)
@@ -571,9 +624,6 @@ def ligandmpnn_to_graph(item, K, M, noise, frame, pdb=None, qm_item=None, user_p
           # fully connected graph per protein index
           ligand_idx_neigh = list(set(res_ligand_map[res_idx]))
           atom_atom_edge_tuples.extend([(i,j) for i,j in itertools.product(ligand_idx_neigh, ligand_idx_neigh)])
-
-          # alternative: one ligand graph per protein node
-          # atomic_context = torch.FloatTensor([one_of_k_encoding_unk_indices(protein.ligand_atoms[0][i], atom_mapping) for i in ligand_idx_neigh])
 
           # connect all atoms to their neighboring residue
           res_atom_edge_tuples.extend([(res_idx, j) for j in ligand_idx_neigh])
@@ -595,9 +645,6 @@ def ligandmpnn_to_graph(item, K, M, noise, frame, pdb=None, qm_item=None, user_p
       qm_feats = torch.from_numpy(qm_item["atom_properties"]["atom_properties_values"][()]).to(atom_node_feats)
       atom_node_feats = torch.cat((atom_node_feats, qm_feats), dim=-1)
 
-    # edge_weights = torch.FloatTensor(
-    #     [1.0 / (np.linalg.norm(node_pos[i] - node_pos[j]) + 1e-5) for i, j in edges.t()]).view(-1)
-
     return (
         res_node_feats,
         res_node_labels,
@@ -609,49 +656,3 @@ def ligandmpnn_to_graph(item, K, M, noise, frame, pdb=None, qm_item=None, user_p
         res_atom_edge_feats,
         atom_atom_edge_feats,
     )
-
-
-def mol_df_to_graph_for_qm(df, bonds=None, allowable_atoms=None, edge_dist_cutoff=4.5, onehot_edges=True):
-    """
-    Converts molecule in dataframe to a graph compatible with Pytorch-Geometric
-    :param df: Molecule structure in dataframe format
-    :type mol: pandas.DataFrame
-    :param bonds: Molecule structure in dataframe format
-    :type bonds: pandas.DataFrame
-    :param allowable_atoms: List containing allowable atom types
-    :type allowable_atoms: list[str], optional
-    :return: Tuple containing \n
-        - node_feats (torch.FloatTensor): Features for each node, one-hot encoded by atom type in ``allowable_atoms``.
-        - edge_index (torch.LongTensor): Edges from chemical bond graph in COO format.
-        - edge_feats (torch.FloatTensor): Edge features given by bond type. Single = 1.0, Double = 2.0, Triple = 3.0, Aromatic = 1.5.
-        - node_pos (torch.FloatTensor): x-y-z coordinates of each node.
-    """
-    if allowable_atoms is None:
-        allowable_atoms = ligand_atoms_mapping
-    node_pos = torch.FloatTensor(df[['x', 'y', 'z']].to_numpy())
-    
-    if bonds is not None:
-        N = df.shape[0]
-        bond_mapping = {1.0: 0, 2.0: 1, 3.0: 2, 1.5: 3}
-        bond_data = torch.FloatTensor(bonds)
-        edge_tuples = torch.cat((bond_data[:, :2], torch.flip(bond_data[:, :2], dims=(1,))), dim=0)
-        edge_index = edge_tuples.t().long().contiguous()
-        
-        if onehot_edges:
-            bond_idx = list(map(lambda x: bond_mapping[x], bond_data[:,-1].tolist())) + list(map(lambda x: bond_mapping[x], bond_data[:,-1].tolist()))
-            edge_attr = F.one_hot(torch.tensor(bond_idx), num_classes=4).to(torch.float)
-            # edge_index, edge_attr = coalesce(edge_index, edge_attr, N, N)
-  
-        else:
-            edge_attr = torch.cat((torch.FloatTensor(bond_data[:,-1]).view(-1), torch.FloatTensor(bond_data[:,-1]).view(-1)), dim=0)
-    else:
-        kd_tree = ss.KDTree(node_pos)
-        edge_tuples = list(kd_tree.query_pairs(edge_dist_cutoff))
-        edge_index = torch.LongTensor(edge_tuples).t().contiguous()
-        edge_index = to_undirected(edge_index)
-        edge_attr = torch.FloatTensor([1.0 / (np.linalg.norm(node_pos[i] - node_pos[j]) + 1e-5) for i, j in edge_index.t()]).view(-1)
-        edge_attr = edge_attr.unsqueeze(1)
-    
-    node_feats = torch.FloatTensor([one_of_k_encoding_unk_indices_qm(e, allowable_atoms) for e in df['element']])    
-    
-    return node_feats, edge_index, edge_attr, node_pos
